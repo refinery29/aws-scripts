@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+getAccessKeys () {
+    for u in $(aws iam list-users | jq -r '.Users[] | .UserName')
+    do
+        keyMetadata=$(aws iam list-access-keys --user-name "$u" | \
+                      jq '.AccessKeyMetadata[] | .UserName + " " + .AccessKeyId + " " + .CreateDate + " " + .Status' -r)
+        IFS='
+'
+        for keyline in $keyMetadata
+        do
+            key=$(echo "$keyline" | awk '{print $2}')
+            last_used=$(aws iam get-access-key-last-used --access-key-id "$key" | jq .AccessKeyLastUsed.LastUsedDate -r)
+            printf '%s %s\n' "$keyline" "$last_used"
+        done
+    done
+}
+
+disableUnusedKeys () {
+    IFS='
+'
+    for line in $(getAccessKeys | grep 'Active null')
+    do
+        aws iam update-access-key --user-name "$(echo "$line" | awk '{print $1}')" \
+                                  --access-key-id "$(echo "$line" | awk '{print $2}')" \
+                                  --status Inactive
+    done
+}
+
+case "$1" in
+  (list) getAccessKeys;;
+  (disable-unused-keys) disableUnusedKeys;;
+esac
